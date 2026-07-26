@@ -264,9 +264,77 @@
     color: #fff;
   }
   .modal-btn:hover{ filter: brightness(0.97); }
+
+  /* 관리자 로그인 전에는 편집 아이콘/추가 버튼을 숨김 */
+  .card-edit, .line-edit { display: none; }
+  .add-card { display: none !important; }
+  body.admin-mode .card-edit { display: flex; }
+  body.admin-mode .line-edit { display: flex; }
+  body.admin-mode .add-card { display: flex !important; }
+
+  /* 상단 우측 로그인/관리자 표시 영역 */
+  #authBar{
+    position: fixed;
+    top: 16px;
+    right: 18px;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #googleLoginBtn{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--dim);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(28,39,51,0.06);
+  }
+  #googleLoginBtn:hover{ border-color: var(--accent); color: var(--accent); }
+  #googleLoginBtn:disabled{ opacity: 0.6; cursor: default; }
+  #userBadge{
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    box-shadow: 0 2px 8px rgba(28,39,51,0.06);
+    font-size: 12px;
+    color: var(--dim);
+  }
+  #userBadgeEmail{ font-weight: 600; color: var(--text); }
+  #logoutBtn{
+    border: none;
+    background: rgba(28,39,51,0.06);
+    color: var(--dim);
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  #logoutBtn:hover{ background: rgba(28,39,51,0.12); color: var(--text); }
 </style>
 </head>
 <body>
+  <div id="authBar">
+    <button id="googleLoginBtn" type="button">
+      <span id="googleLoginBtnLabel">관리자 로그인</span>
+    </button>
+    <div id="userBadge">
+      <span id="userBadgeEmail"></span>
+      <button id="logoutBtn" type="button">로그아웃</button>
+    </div>
+  </div>
+
   <div class="editable-line">
     <span class="eyebrow" data-key="eyebrow" style="margin-bottom:0;">Personal Workspace</span>
     <button class="line-edit" type="button" data-target="line" data-target-key="eyebrow" data-label="상단 문구" aria-label="상단 문구 편집">
@@ -385,9 +453,11 @@
     </div>
   </div>
 
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script>
     (function(){
-      var STORAGE_KEY = 'toolsHomeContent';
       var grid = document.getElementById('cardGrid');
       var addCardBtn = document.getElementById('addCardBtn');
       var totalCards = 3; // 기본 카드 개수 (일정관리, 계정관리, 금융정보)
@@ -396,6 +466,13 @@
       function getTextEl(key){
         return document.querySelector('[data-key="' + key + '"]');
       }
+
+      // 페이지에 원래 하드코딩되어 있던 기본 상태를 스냅샷으로 저장 (로그아웃/비관리자 상태 복원용)
+      var DEFAULT_GRID_HTML = grid.innerHTML;
+      var DEFAULT_TOTAL_CARDS = totalCards;
+      var DEFAULT_EYEBROW = getTextEl('eyebrow').textContent;
+      var DEFAULT_TITLE = getTextEl('title').textContent;
+      var DEFAULT_FOOTER = getTextEl('footer').textContent;
 
       // 새 카드 HTML 구조 생성 함수
       function createCardElement(id) {
@@ -422,41 +499,36 @@
         return a;
       }
 
-      function loadContent(){
-        try{
-          var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-          
-          // 동적 카드 로드
-          if(saved.cardCount && parseInt(saved.cardCount) > 3) {
-            totalCards = parseInt(saved.cardCount);
-            for(var i = 4; i <= totalCards; i++) {
-              var newCard = createCardElement(i);
-              grid.insertBefore(newCard, addCardBtn);
-            }
-          }
-
-          // 전체 텍스트 데이터 덮어쓰기 (새로 생성된 카드 포함)
-          var textEls = document.querySelectorAll('[data-key]');
-          textEls.forEach(function(el){
-            var key = el.getAttribute('data-key');
-            if(saved[key] !== undefined){ el.textContent = saved[key]; }
-          });
-
-          // 전체 URL 덮어쓰기
-          for(var i = 1; i <= totalCards; i++) {
-            if(saved['url' + i]) {
-              var linkEl = document.getElementById('cardLink' + i);
-              if(linkEl) linkEl.href = saved['url' + i];
-            }
-          }
-        }catch(e){}
+      // 새 항목 추가 버튼에 클릭 이벤트를 (재)연결. grid.innerHTML을 새로 그릴 때마다 다시 호출해야 함
+      function bindAddCardBtn(){
+        addCardBtn = document.getElementById('addCardBtn');
+        addCardBtn.addEventListener('click', function(e){
+          e.preventDefault();
+          if(!isAdmin()) return;
+          totalCards++;
+          fsSave({ 'cardCount': totalCards });
+          var newCard = createCardElement(totalCards);
+          grid.insertBefore(newCard, addCardBtn);
+          currentCard = totalCards;
+          cardTitle.textContent = '새 카드 추가';
+          cardTag.value = 'NEW';
+          cardName.value = '새 바로가기';
+          cardDesc.value = '새로운 도구 설명을 입력하세요.';
+          cardArrow.value = '바로가기';
+          cardUrl.value = '';
+          cardOverlay.classList.add('open');
+          cardTag.focus();
+        });
       }
 
-      function saveKeys(map){
-        var data = {};
-        try{ data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }catch(e){}
-        Object.keys(map).forEach(function(k){ data[k] = map[k]; });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      // 코드에 저장된 기본 상태로 되돌림 (로그아웃 시 / 관리자가 아닐 때)
+      function resetToDefaults(){
+        grid.innerHTML = DEFAULT_GRID_HTML;
+        totalCards = DEFAULT_TOTAL_CARDS;
+        bindAddCardBtn();
+        getTextEl('eyebrow').textContent = DEFAULT_EYEBROW;
+        getTextEl('title').textContent = DEFAULT_TITLE;
+        getTextEl('footer').textContent = DEFAULT_FOOTER;
       }
 
       /* ---------------- 단일 문구 편집 로직 ---------------- */
@@ -471,6 +543,7 @@
         btn.addEventListener('click', function(e){
           e.preventDefault();
           e.stopPropagation();
+          if(!isAdmin()) return;
           currentLineKey = btn.getAttribute('data-target-key');
           lineTitle.textContent = btn.getAttribute('data-label') + ' 수정';
           lineInput.value = getTextEl(currentLineKey).textContent;
@@ -482,11 +555,11 @@
       function closeLineModal(){ lineOverlay.classList.remove('open'); currentLineKey = null; }
       lineCancel.addEventListener('click', closeLineModal);
       lineSave.addEventListener('click', function(){
-        if(!currentLineKey) return;
+        if(!isAdmin() || !currentLineKey) return;
         var value = lineInput.value.trim();
         if(value.length === 0) return;
         getTextEl(currentLineKey).textContent = value;
-        var map = {}; map[currentLineKey] = value; saveKeys(map);
+        var map = {}; map[currentLineKey] = value; fsSave(map);
         closeLineModal();
       });
       lineOverlay.addEventListener('click', function(e){ if(e.target === lineOverlay) closeLineModal(); });
@@ -504,30 +577,8 @@
       var cardCancel = document.getElementById('cardModalCancel');
       var currentCard = null;
 
-      // 항목 추가 버튼 클릭 시
-      addCardBtn.addEventListener('click', function(e){
-        e.preventDefault();
-        totalCards++;
-        
-        // 카드 총 갯수 저장
-        saveKeys({ 'cardCount': totalCards });
-        
-        // 새 카드 DOM 생성 및 삽입
-        var newCard = createCardElement(totalCards);
-        grid.insertBefore(newCard, addCardBtn);
-        
-        // 방금 만든 카드의 모달 바로 열기
-        currentCard = totalCards;
-        cardTitle.textContent = '새 카드 추가';
-        cardTag.value = 'NEW';
-        cardName.value = '새 바로가기';
-        cardDesc.value = '새로운 도구 설명을 입력하세요.';
-        cardArrow.value = '바로가기';
-        cardUrl.value = '';
-        
-        cardOverlay.classList.add('open');
-        cardTag.focus();
-      });
+      // 새 항목 추가 버튼 초기 바인딩
+      bindAddCardBtn();
 
       // 이벤트 위임(Event Delegation)을 통한 편집 버튼 클릭 감지 (동적 생성 카드 대응)
       grid.addEventListener('click', function(e){
@@ -535,6 +586,7 @@
         if(editBtn){
           e.preventDefault();
           e.stopPropagation();
+          if(!isAdmin()) return;
           currentCard = editBtn.getAttribute('data-card');
           cardTitle.textContent = getTextEl('name' + currentCard).textContent + ' 카드 수정';
           cardTag.value = getTextEl('tag' + currentCard).textContent;
@@ -554,7 +606,7 @@
       cardCancel.addEventListener('click', closeCardModal);
       
       cardSave.addEventListener('click', function(){
-        if(!currentCard) return;
+        if(!isAdmin() || !currentCard) return;
         var map = {};
         
         // 텍스트 저장
@@ -585,7 +637,7 @@
           }
         }
 
-        saveKeys(map);
+        fsSave(map);
         closeCardModal();
       });
       cardOverlay.addEventListener('click', function(e){ if(e.target === cardOverlay) closeCardModal(); });
@@ -598,8 +650,142 @@
         if(cardOverlay.classList.contains('open')) closeCardModal();
       });
 
-      // 최초 실행
-      loadContent();
+      /* ---------------- Firebase 인증 & Firestore 저장소 ---------------- */
+      var firebaseConfig = {
+        apiKey: "AIzaSyCBSaHe11LVv-bQ4e8yf0jEWquVjwTcJi8",
+        authDomain: "my-tools-5f8ac.firebaseapp.com",
+        projectId: "my-tools-5f8ac",
+        storageBucket: "my-tools-5f8ac.firebasestorage.app",
+        messagingSenderId: "188948905294",
+        appId: "1:188948905294:web:4b7f0d2502910fdeaf721f",
+        measurementId: "G-93EWWWBQMY"
+      };
+      firebase.initializeApp(firebaseConfig);
+      var fbAuth = firebase.auth();
+      var fbDb = firebase.firestore();
+
+      /* 로그인 가능한 관리자 계정 (이 계정으로만 편집 가능) */
+      var ADMIN_EMAIL = 'hih100930@gmail.com';
+      var FS_COLLECTION = 'mytools_admin_data';
+      var FS_DOC_ID = 'main';
+
+      var fsUnsub = null;
+      var fsApplyingRemote = false;
+
+      function fsDocRef(){
+        return fbDb.collection(FS_COLLECTION).doc(FS_DOC_ID);
+      }
+
+      // 관리자로 로그인되어 있고, 화면도 admin-mode 상태일 때만 true
+      function isAdmin(){
+        var u = fbAuth.currentUser;
+        return !!(u && u.email === ADMIN_EMAIL && document.body.classList.contains('admin-mode'));
+      }
+
+      function setAdminMode(on){
+        document.body.classList.toggle('admin-mode', !!on);
+      }
+
+      function showLoggedOutUI(){
+        var loginBtn = document.getElementById('googleLoginBtn');
+        loginBtn.style.display = '';
+        loginBtn.disabled = false;
+        document.getElementById('googleLoginBtnLabel').textContent = '관리자 로그인';
+        document.getElementById('userBadge').style.display = 'none';
+      }
+      function showLoggedInUI(user){
+        document.getElementById('googleLoginBtn').style.display = 'none';
+        document.getElementById('userBadge').style.display = 'flex';
+        document.getElementById('userBadgeEmail').textContent = user.email;
+      }
+
+      document.getElementById('googleLoginBtn').addEventListener('click', function(){
+        var btn = document.getElementById('googleLoginBtn');
+        btn.disabled = true;
+        document.getElementById('googleLoginBtnLabel').textContent = '로그인 중...';
+        var provider = new firebase.auth.GoogleAuthProvider();
+        fbAuth.signInWithPopup(provider).catch(function(e){
+          console.error(e);
+          alert('로그인에 실패했습니다. 다시 시도해주세요.');
+          showLoggedOutUI();
+        });
+      });
+
+      document.getElementById('logoutBtn').addEventListener('click', function(){
+        if(confirm('로그아웃 하시겠습니까?')) fbAuth.signOut();
+      });
+
+      // Firestore에 저장된 값으로 화면을 덮어씀 (기본값 위에 저장된 값만 얹는 방식)
+      function applyRemoteData(data){
+        fsApplyingRemote = true;
+        resetToDefaults();
+
+        // 저장된 카드 개수만큼 카드 DOM 추가 생성
+        if(data.cardCount && parseInt(data.cardCount) > DEFAULT_TOTAL_CARDS){
+          totalCards = parseInt(data.cardCount);
+          for(var i = DEFAULT_TOTAL_CARDS + 1; i <= totalCards; i++){
+            var newCard = createCardElement(i);
+            grid.insertBefore(newCard, addCardBtn);
+          }
+        }
+
+        // 텍스트 전체 덮어쓰기 (새로 생성된 카드 포함)
+        var textEls = document.querySelectorAll('[data-key]');
+        textEls.forEach(function(el){
+          var key = el.getAttribute('data-key');
+          if(data[key] !== undefined){ el.textContent = data[key]; }
+        });
+
+        // URL 전체 덮어쓰기
+        for(var j = 1; j <= totalCards; j++){
+          if(data['url' + j]){
+            var linkEl = document.getElementById('cardLink' + j);
+            if(linkEl) linkEl.href = data['url' + j];
+          }
+        }
+        fsApplyingRemote = false;
+      }
+
+      async function fsLoadOnce(){
+        try{
+          var snap = await fsDocRef().get();
+          if(snap.exists){ applyRemoteData(snap.data() || {}); }
+        }catch(e){ console.error('Firestore 로드 실패', e); }
+      }
+
+      function fsListen(){
+        fsUnsub = fsDocRef().onSnapshot(function(doc){
+          if(!doc.exists) return;
+          applyRemoteData(doc.data() || {});
+        }, function(err){ console.error('Firestore 동기화 오류', err); });
+      }
+
+      // 관리자 로그인 상태에서만 Firestore에 저장 (merge)
+      function fsSave(map){
+        if(!isAdmin() || fsApplyingRemote) return;
+        fsDocRef().set(map, { merge: true }).catch(function(e){
+          console.error('Firestore 저장 실패', e);
+        });
+      }
+
+      fbAuth.onAuthStateChanged(async function(user){
+        if(fsUnsub){ fsUnsub(); fsUnsub = null; }
+        if(!user){
+          setAdminMode(false);
+          showLoggedOutUI();
+          resetToDefaults(); // 로그아웃 시 코드에 저장된 기본값으로 복원
+          return;
+        }
+        if(user.email !== ADMIN_EMAIL){
+          alert('관리자 계정(' + ADMIN_EMAIL + ')으로만 로그인할 수 있습니다.');
+          await fbAuth.signOut();
+          return;
+        }
+        showLoggedInUI(user);
+        setAdminMode(true);
+        await fsLoadOnce();
+        fsListen();
+      });
     })();
   </script>
 </body>
