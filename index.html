@@ -13,7 +13,8 @@
     --dim: #6b7c88;
     --accent: #1a9c74;
     --accent2: #2f6fd6;
-    --accent3: #9b59b6
+    --accent3: #9b59b6;
+    --accent4: #e8c84a
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{height:100%;}
@@ -84,6 +85,8 @@
   .card.blue::before{ background: var(--accent2); }
   .card.purple::before{ background: var(--accent3); }
   .card.purple .arrow{ color: var(--accent3); }
+  .card.yellow::before{ background: var(--accent4); }
+  .card.yellow .arrow{ color: var(--accent4); }
   .card:hover{
     transform: translateY(-4px);
     border-color: var(--line);
@@ -391,6 +394,20 @@
       </div>
     </a>
 
+    <a class="card yellow" id="cardLink4" href="https://xn--989a00af8jnslv3dba.com/" target="_blank" rel="noopener">
+      <button class="card-edit" type="button" data-target="card" data-card="4" aria-label="부동산 관리 카드 편집">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
+      <div class="tag" data-key="tag4">Real Estate</div>
+      <div class="name" data-key="name4">부동산 관리</div>
+      <div class="desc" data-key="desc4">부동산 세금 관련 Tool</div>
+      <div class="arrow"><span data-key="arrow4">바로가기</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14M13 5l7 7-7 7"/>
+        </svg>
+      </div>
+    </a>
+
     <!-- 새 항목 추가 아이콘/버튼 -->
     <button class="card add-card" id="addCardBtn" type="button" aria-label="새 항목 추가">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28">
@@ -460,7 +477,7 @@
     (function(){
       var grid = document.getElementById('cardGrid');
       var addCardBtn = document.getElementById('addCardBtn');
-      var totalCards = 3; // 기본 카드 개수 (일정관리, 계정관리, 금융정보)
+      var totalCards = 4; // 기본 카드 개수 (일정관리, 계정관리, 금융정보, 부동산 관리)
 
       // 텍스트를 담는 요소를 가져오는 헬퍼 함수
       function getTextEl(key){
